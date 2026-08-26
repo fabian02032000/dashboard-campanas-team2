@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Team 2 — Dashboard de Leads</title>
+<style>
+  /* ==========================================================================
+     TOKENS — paleta (ver dataviz skill). Todo el CSS se referencia por rol,
+     así claro/oscuro cambian en un solo lugar.
+     ========================================================================== */
+  :root {
+    color-scheme: light;
+    --page:        #f9f9f7;
+    --surface-1:   #fcfcfb;
+    --surface-2:   #ffffff;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:    #e1e0d9;
+    --baseline:    #c3c2b7;
+    --border:      rgba(11,11,11,0.10);
+    --series-1:    #2a78d6; /* azul — leads / serie primaria */
+    --series-2:    #eb6834; /* naranja — ventas / serie secundaria */
+    --series-3:    #1baf7a; /* aqua */
+    --good:        #0ca30c;
+    --seq-100:     #cde2fb;
+    --seq-400:     #3987e5;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --page:        #0d0d0d;
+      --surface-1:   #1a1a19;
+      --surface-2:   #201f1e;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:    #2c2c2a;
+      --baseline:    #383835;
+      --border:      rgba(255,255,255,0.10);
+      --series-1:    #3987e5;
+      --series-2:    #d95926;
+      --series-3:    #199e70;
+      --good:        #0ca30c;
+      --seq-100:     #184f95;
+      --seq-400:     #3987e5;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --page:        #0d0d0d;
+    --surface-1:   #1a1a19;
+    --surface-2:   #201f1e;
+    --text-primary:   #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted:     #898781;
+    --gridline:    #2c2c2a;
+    --baseline:    #383835;
+    --border:      rgba(255,255,255,0.10);
+    --series-1:    #3987e5;
+    --series-2:    #d95926;
+    --series-3:    #199e70;
+    --good:        #0ca30c;
+    --seq-100:     #184f95;
+    --seq-400:     #3987e5;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 64px; }
+
+  header.top {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; flex-wrap: wrap; margin-bottom: 20px;
+  }
+  header.top h1 { font-size: 20px; margin: 0; }
+  header.top .sub { color: var(--text-secondary); font-size: 13px; margin-top: 2px; }
+  .top-actions { display: flex; align-items: center; gap: 8px; }
+  button.icon-btn {
+    background: var(--surface-2); border: 1px solid var(--border);
+    color: var(--text-primary); border-radius: 8px; padding: 8px 12px;
+    font-size: 13px; cursor: pointer;
+  }
+  button.icon-btn:hover { border-color: var(--text-muted); }
+
+  /* Filtros */
+  .filters {
+    display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 22px;
+  }
+  .filters label { font-size: 12px; color: var(--text-secondary); margin-right: 4px; }
+  .filters select {
+    background: var(--surface-2); color: var(--text-primary);
+    border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px;
+    font-size: 13px;
+  }
+  .filters .last-update { margin-left: auto; font-size: 12px; color: var(--text-muted); }
+
+  section.block { margin-bottom: 28px; }
+  section.block h2 {
+    font-size: 14px; text-transform: uppercase; letter-spacing: .04em;
+    color: var(--text-secondary); margin: 0 0 12px;
+  }
+
+  /* Stat tiles */
+  .tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+  .tile {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .tile .label { font-size: 12px; color: var(--text-secondary); }
+  .tile .value { font-size: 26px; font-weight: 600; margin-top: 4px; }
+  .tile .value.good { color: var(--good); }
+  .tile .hint { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+  /* Grouped bar chart (resumen mensual) */
+  .chart-card {
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px;
+  }
+  .legend { display: flex; gap: 16px; margin-bottom: 12px; font-size: 12px; color: var(--text-secondary); }
+  .legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .month-chart { display: flex; align-items: flex-end; gap: 18px; height: 180px; padding-top: 8px; border-bottom: 1px solid var(--baseline); }
+  .month-col { display: flex; flex-direction: column; align-items: center; flex: 1; min-width: 40px; }
+  .month-bars { display: flex; align-items: flex-end; gap: 4px; height: 150px; }
+  .bar { width: 16px; border-radius: 4px 4px 0 0; position: relative; }
+  .bar.leads { background: var(--series-1); }
+  .bar.ventas { background: var(--series-2); }
+  .bar .val { position: absolute; top: -18px; left: 50%; transform: translateX(-50%); font-size: 10px; color: var(--text-secondary); white-space: nowrap; }
+  .month-label { font-size: 11px; color: var(--text-muted); margin-top: 6px; }
+
+  /* Ranked horizontal bars (tipificaciones / plan vendido) */
+  .rank-row { display: grid; grid-template-columns: 180px 1fr 48px; align-items: center; gap: 10px; padding: 6px 0; }
+  .rank-row .name { font-size: 13px; color: var(--text-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rank-track { background: var(--gridline); border-radius: 4px; height: 10px; overflow: hidden; }
+  .rank-fill { height: 100%; border-radius: 4px; background: var(--seq-400); }
+  .rank-row .count { font-size: 12px; color: var(--text-secondary); text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* Tabla ranking asesores */
+  table.advisors { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.advisors th, table.advisors td {
+    text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--gridline);
+  }
+  table.advisors th { color: var(--text-secondary); font-weight: 500; font-size: 12px; }
+  table.advisors td.num, table.advisors th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  table.advisors tbody tr:hover { background: var(--surface-2); }
+  .mini-track { background: var(--gridline); border-radius: 3px; height: 6px; width: 80px; overflow: hidden; display: inline-block; vertical-align: middle; }
+  .mini-fill { height: 100%; background: var(--series-2); border-radius: 3px; }
+
+  .empty-state {
+    text-align: center; padding: 60px 20px; color: var(--text-secondary);
+    background: var(--surface-1); border: 1px dashed var(--border); border-radius: 12px;
+  }
+  .empty-state .big { font-size: 15px; color: var(--text-primary); margin-bottom: 6px; }
+  .empty-state .small { font-size: 13px; }
+
+  footer.note { margin-top: 30px; font-size: 12px; color: var(--text-muted); text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div>
+      <h1>Team 2 — Dashboard de Leads</h1>
+      <div class="sub">Leads nuevos de pauta — Meta + TikTok</div>
+    </div>
+    <div class="top-actions">
+      <button class="icon-btn" id="btn-refresh" title="Actualizar datos">↻ Actualizar</button>
+      <button class="icon-btn" id="btn-theme" title="Cambiar tema">🌓 Tema</button>
+    </div>
+  </header>
+
+  <div class="filters">
+    <label for="f-plataforma">Plataforma</label>
+    <select id="f-plataforma"></select>
+    <label for="f-mes">Mes</label>
+    <select id="f-mes"></select>
+    <label for="f-asesor">Asesor</label>
+    <select id="f-asesor"></select>
+    <span class="last-update" id="last-update">—</span>
+  </div>
+
+  <div id="content"></div>
+
+  <footer class="note">Dashboard propio de Team 2 · datos de Meta y TikTok únicamente (no incluye Base Fría)</footer>
+</div>
+
+<script>
+/* ============================================================================
+   CONFIG — nombres de campos que entrega el backend (Apps Script -> data.json).
+   Si algún día cambia el esquema, se ajusta solo aquí.
+   ============================================================================ */
+const CONFIG = {
+  DATA_URL: 'data.json',
+  MESES: ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
+};
+
+let RAW_LEADS = [];   // tal cual llega de data.json
+let META = { generated_at: null };
+
+/* ============================================================================
+   CARGA / NORMALIZACIÓN
+   ============================================================================ */
+async function loadData() {
+  const res = await fetch(CONFIG.DATA_URL + '?t=' + Date.now());
+  const json = await res.json();
+  RAW_LEADS = Array.isArray(json.leads) ? json.leads : [];
+  META.generated_at = json.generated_at || null;
+  document.getElementById('last-update').textContent = META.generated_at
+    ? 'Actualizado: ' + new Date(META.generated_at).toLocaleString('es-PE')
+    : 'Sin datos aún';
+}
+
+function asText(value) {
+  if (value === null || value === undefined) return '';
+  return String(value).trim();
+}
+
+function normalize(lead) {
+  return {
+    plataforma: asText(lead.plataforma).toLowerCase(),
+    asesor: asText(lead.asesor) || 'Sin asignar',
+    mes: asText(lead.mes),
+    anio: asText(lead.anio),
+    status_gestion: asText(lead.status_gestion).toUpperCase(),
+    tipificacion: asText(lead.tipificacion),
+    plan_vendido: asText(lead.plan_vendido),
+    qty_venta: Number(lead.qty_venta) > 0 ? Number(lead.qty_venta) : 0,
+  };
+}
+
+/* ============================================================================
+   FILTROS
+   ============================================================================ */
+function uniqueSorted(arr) {
+  return [...new Set(arr)].filter(Boolean).sort();
+}
+
+function populateFilters(leads) {
+  const plataformas = uniqueSorted(leads.map(l => l.plataforma));
+  const asesores = uniqueSorted(leads.map(l => l.asesor));
+  const meses = uniqueSorted(leads.map(l => l.anio + '-' + String(l.mes).padStart(2, '0')));
+
+  fillSelect('f-plataforma', ['todas', ...plataformas], v => v === 'todas' ? 'Todas' : v.toUpperCase());
+  fillSelect('f-asesor', ['todos', ...asesores], v => v === 'todos' ? 'Todos' : v);
+  fillSelect('f-mes', ['todos', ...meses], v => {
+    if (v === 'todos') return 'Todos';
+    const [y, m] = v.split('-');
+    return CONFIG.MESES[Number(m)] + ' ' + y;
+  });
+}
+
+function fillSelect(id, values, labelFn) {
+  const el = document.getElementById(id);
+  const prev = el.value;
+  el.innerHTML = '';
+  values.forEach(v => {
+    const opt = document.createElement('option');
+    opt.value = v;
+    opt.textContent = labelFn(v);
+    el.appendChild(opt);
+  });
+  if (values.includes(prev)) el.value = prev;
+}
+
+function applyFilters(leads) {
+  const plat = document.getElementById('f-plataforma').value;
+  const mes = document.getElementById('f-mes').value;
+  const asesor = document.getElementById('f-asesor').value;
+  return leads.filter(l => {
+    if (plat && plat !== 'todas' && l.plataforma !== plat) return false;
+    if (asesor && asesor !== 'todos' && l.asesor !== asesor) return false;
+    if (mes && mes !== 'todos') {
+      const key = l.anio + '-' + String(l.mes).padStart(2, '0');
+      if (key !== mes) return false;
+    }
+    return true;
+  });
+}
+
+/* ============================================================================
+   MÉTRICAS
+   ============================================================================ */
+function computeMetrics(leads) {
+  const total = leads.length;
+  const gestionados = leads.filter(l => l.status_gestion !== '').length;
+  const contacto = leads.filter(l => l.status_gestion === 'CONTACTO').length;
+  const noContacto = leads.filter(l => l.status_gestion === 'NO CONTACTO').length;
+  const ventas = leads.reduce((sum, l) => sum + l.qty_venta, 0);
+
+  const pctGestion = total ? (gestionados / total * 100) : 0;
+  const pctConversion = total ? (ventas / total * 100) : 0;
+
+  // Resumen mensual
+  const monthKeys = uniqueSorted(leads.map(l => l.anio + '-' + String(l.mes).padStart(2, '0')));
+  const porMes = monthKeys.map(key => {
+    const [y, m] = key.split('-');
+    const monthLeads = leads.filter(l => (l.anio + '-' + String(l.mes).padStart(2, '0')) === key);
+    return {
+      key, label: CONFIG.MESES[Number(m)] + ' ' + y,
+      leads: monthLeads.length,
+      ventas: monthLeads.reduce((s, l) => s + l.qty_venta, 0),
+    };
+  });
+
+  // Tipificaciones
+  const tipiMap = {};
+  leads.forEach(l => {
+    const key = l.tipificacion || '(sin tipificar)';
+    tipiMap[key] = (tipiMap[key] || 0) + 1;
+  });
+  const tipificaciones = Object.entries(tipiMap)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  // Plan más vendido
+  const planMap = {};
+  leads.filter(l => l.qty_venta > 0).forEach(l => {
+    const key = l.plan_vendido || '(sin especificar)';
+    planMap[key] = (planMap[key] || 0) + l.qty_venta;
+  });
+  const planes = Object.entries(planMap)
+    .map(([name, count]) => ({ name, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 8);
+
+  // Ranking asesores
+  const asesorMap = {};
+  leads.forEach(l => {
+    if (!asesorMap[l.asesor]) asesorMap[l.asesor] = { asesor: l.asesor, leads: 0, gestionados: 0, ventas: 0 };
+    const a = asesorMap[l.asesor];
+    a.leads += 1;
+    if (l.status_gestion !== '') a.gestionados += 1;
+    a.ventas += l.qty_venta;
+  });
+  const ranking = Object.values(asesorMap)
+    .map(a => ({ ...a, conversion: a.leads ? (a.ventas / a.leads * 100) : 0 }))
+    .sort((a, b) => b.ventas - a.ventas);
+
+  return { total, gestionados, contacto, noContacto, ventas, pctGestion, pctConversion, porMes, tipificaciones, planes, ranking };
+}
+
+/* ============================================================================
+   RENDER
+   ============================================================================ */
+function render() {
+  const filtered = applyFilters(RAW_LEADS.map(normalize));
+  const el = document.getElementById('content');
+
+  if (RAW_LEADS.length === 0) {
+    el.innerHTML = `<div class="empty-state">
+      <div class="big">Todavía no hay datos conectados</div>
+      <div class="small">En cuanto el Google Sheet de Team 2 esté enlazado, este panel se llena solo.</div>
+    </div>`;
+    return;
+  }
+
+  const m = computeMetrics(filtered);
+  const maxRankBar = Math.max(...m.tipificaciones.map(t => t.count), ...m.planes.map(p => p.count), 1);
+  const maxMonthVal = Math.max(...m.porMes.map(x => Math.max(x.leads, x.ventas)), 1);
+  const maxVentasAsesor = Math.max(...m.ranking.map(a => a.ventas), 1);
+
+  el.innerHTML = `
+    <section class="block">
+      <h2>Resumen general</h2>
+      <div class="tiles">
+        <div class="tile"><div class="label">Leads ingresados</div><div class="value">${m.total}</div></div>
+        <div class="tile"><div class="label">Gestionados</div><div class="value">${m.gestionados}</div><div class="hint">${m.pctGestion.toFixed(1)}% del total</div></div>
+        <div class="tile"><div class="label">Contacto</div><div class="value">${m.contacto}</div></div>
+        <div class="tile"><div class="label">No contacto</div><div class="value">${m.noContacto}</div></div>
+        <div class="tile"><div class="label">Ventas</div><div class="value good">${m.ventas}</div><div class="hint">${m.pctConversion.toFixed(1)}% conversión</div></div>
+      </div>
+    </section>
+
+    <section class="block">
+      <h2>Resumen mensual — leads vs. ventas</h2>
+      <div class="chart-card">
+        <div class="legend">
+          <span><span class="dot" style="background:var(--series-1)"></span>Leads</span>
+          <span><span class="dot" style="background:var(--series-2)"></span>Ventas</span>
+        </div>
+        <div class="month-chart">
+          ${m.porMes.map(row => `
+            <div class="month-col">
+              <div class="month-bars">
+                <div class="bar leads" style="height:${row.leads / maxMonthVal * 140}px"><span class="val">${row.leads}</span></div>
+                <div class="bar ventas" style="height:${row.ventas / maxMonthVal * 140}px"><span class="val">${row.ventas}</span></div>
+              </div>
+              <div class="month-label">${row.label}</div>
+            </div>`).join('') || '<div class="empty-state small">Sin datos en el rango seleccionado</div>'}
+        </div>
+      </div>
+    </section>
+
+    <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 18px;">
+      <section class="block">
+        <h2>Tipificaciones</h2>
+        <div class="chart-card">
+          ${m.tipificaciones.map(t => `
+            <div class="rank-row">
+              <div class="name" title="${escapeHtml(t.name)}">${escapeHtml(t.name)}</div>
+              <div class="rank-track"><div class="rank-fill" style="width:${t.count / maxRankBar * 100}%"></div></div>
+              <div class="count">${t.count}</div>
+            </div>`).join('') || '<div class="empty-state small">Sin datos</div>'}
+        </div>
+      </section>
+
+      <section class="block">
+        <h2>Plan más vendido</h2>
+        <div class="chart-card">
+          ${m.planes.map(p => `
+            <div class="rank-row">
+              <div class="name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>
+              <div class="rank-track"><div class="rank-fill" style="width:${p.count / maxRankBar * 100}%"></div></div>
+              <div class="count">${p.count}</div>
+            </div>`).join('') || '<div class="empty-state small">Sin ventas en el rango seleccionado</div>'}
+        </div>
+      </section>
+    </div>
+
+    <section class="block">
+      <h2>Ranking y efectividad por asesor</h2>
+      <div class="chart-card" style="overflow-x:auto">
+        <table class="advisors">
+          <thead>
+            <tr>
+              <th>Asesor</th>
+              <th class="num">Leads</th>
+              <th class="num">Gestionados</th>
+              <th class="num">Ventas</th>
+              <th class="num">Conversión</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${m.ranking.map(a => `
+              <tr>
+                <td>${escapeHtml(a.asesor)}</td>
+                <td class="num">${a.leads}</td>
+                <td class="num">${a.gestionados}</td>
+                <td class="num">
+                  <span class="mini-track"><span class="mini-fill" style="width:${a.ventas / maxVentasAsesor * 100}%"></span></span>
+                  ${a.ventas}
+                </td>
+                <td class="num">${a.conversion.toFixed(1)}%</td>
+              </tr>`).join('') || `<tr><td colspan="5" style="text-align:center;color:var(--text-muted)">Sin datos</td></tr>`}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  `;
+}
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ============================================================================
+   INIT
+   ============================================================================ */
+document.getElementById('f-plataforma').addEventListener('change', render);
+document.getElementById('f-mes').addEventListener('change', render);
+document.getElementById('f-asesor').addEventListener('change', render);
+
+document.getElementById('btn-refresh').addEventListener('click', async () => {
+  await loadData();
+  populateFilters(RAW_LEADS.map(normalize));
+  render();
+});
+
+document.getElementById('btn-theme').addEventListener('click', () => {
+  const root = document.documentElement;
+  const current = root.getAttribute('data-theme');
+  root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
+});
+
+(async function init() {
+  await loadData();
+  populateFilters(RAW_LEADS.map(normalize));
+  render();
+})();
+</script>
+</body>
+</html>
