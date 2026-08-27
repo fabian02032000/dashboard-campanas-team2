@@ -200,7 +200,9 @@
    Si algún día cambia el esquema, se ajusta solo aquí.
    ============================================================================ */
 const CONFIG = {
-  DATA_URL: 'data.json',
+  // Endpoint del Apps Script de Team 2 (propio, no compartido con otros equipos).
+  DATA_URL: 'https://script.google.com/a/macros/netcallperu.com/s/AKfycbwmOR-7cG30D6yXD_ddQFhAa9Pl9psu0svfE_oVjECz6ozYoYJoCcXOQBAXXyHnHHyYaw/exec',
+  DATA_TOKEN: '8a4d154f719c4e2495ee726ea173c6c840ac7e69eae945d389884a00a1619f51',
   MESES: ['', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'],
 };
 
@@ -211,8 +213,20 @@ let META = { generated_at: null };
    CARGA / NORMALIZACIÓN
    ============================================================================ */
 async function loadData() {
-  const res = await fetch(CONFIG.DATA_URL + '?t=' + Date.now());
+  const url = CONFIG.DATA_URL + '?token=' + encodeURIComponent(CONFIG.DATA_TOKEN) + '&t=' + Date.now();
+  let res;
+  try {
+    res = await fetch(url);
+  } catch (networkErr) {
+    throw new Error('No se pudo conectar con la fuente de datos. Revisa tu conexión a internet e intenta de nuevo con el botón "Actualizar".');
+  }
+  if (!res.ok) {
+    throw new Error('La fuente de datos respondió con un error (código ' + res.status + '). Intenta de nuevo en un momento.');
+  }
   const json = await res.json();
+  if (json.ok === false) {
+    throw new Error(json.error || 'La fuente de datos devolvió un error.');
+  }
   RAW_LEADS = Array.isArray(json.leads) ? json.leads : [];
   META.generated_at = json.generated_at || null;
   document.getElementById('last-update').textContent = META.generated_at
@@ -471,11 +485,25 @@ document.getElementById('f-plataforma').addEventListener('change', render);
 document.getElementById('f-mes').addEventListener('change', render);
 document.getElementById('f-asesor').addEventListener('change', render);
 
-document.getElementById('btn-refresh').addEventListener('click', async () => {
-  await loadData();
-  populateFilters(RAW_LEADS.map(normalize));
-  render();
-});
+function showLoadError(err) {
+  document.getElementById('content').innerHTML = `<div class="empty-state">
+    <div class="big">No se pudo cargar la información</div>
+    <div class="small">${escapeHtml(err && err.message ? err.message : String(err))}</div>
+  </div>`;
+  document.getElementById('last-update').textContent = 'Error al cargar';
+}
+
+async function refreshAndRender() {
+  try {
+    await loadData();
+    populateFilters(RAW_LEADS.map(normalize));
+    render();
+  } catch (err) {
+    showLoadError(err);
+  }
+}
+
+document.getElementById('btn-refresh').addEventListener('click', refreshAndRender);
 
 document.getElementById('btn-theme').addEventListener('click', () => {
   const root = document.documentElement;
@@ -483,11 +511,7 @@ document.getElementById('btn-theme').addEventListener('click', () => {
   root.setAttribute('data-theme', current === 'dark' ? 'light' : 'dark');
 });
 
-(async function init() {
-  await loadData();
-  populateFilters(RAW_LEADS.map(normalize));
-  render();
-})();
+refreshAndRender();
 </script>
 </body>
 </html>
