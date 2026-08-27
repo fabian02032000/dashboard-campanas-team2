@@ -208,6 +208,7 @@ const CONFIG = {
 
 let RAW_LEADS = [];   // tal cual llega de data.json
 let META = { generated_at: null };
+let RESUMEN = { meta: null, tiktok: null }; // totales de inversión/CPL/CPA (no se filtran por mes/asesor)
 
 /* ============================================================================
    CARGA / NORMALIZACIÓN
@@ -229,6 +230,7 @@ async function loadData() {
   }
   RAW_LEADS = Array.isArray(json.leads) ? json.leads : [];
   META.generated_at = json.generated_at || null;
+  RESUMEN = json.resumen || { meta: null, tiktok: null };
   document.getElementById('last-update').textContent = META.generated_at
     ? 'Actualizado: ' + new Date(META.generated_at).toLocaleString('es-PE')
     : 'Sin datos aún';
@@ -364,6 +366,29 @@ function computeMetrics(leads) {
   return { total, gestionados, contacto, noContacto, ventas, pctGestion, pctConversion, porMes, tipificaciones, planes, ranking };
 }
 
+// Inversión/CPL/CPA vienen de las pestañas "RESUMEN META"/"RESUMEN TIKTOK"
+// (totales del mes, mantenidos ahí). Respeta el filtro de Plataforma;
+// NO se puede filtrar por mes o asesor porque el Sheet solo guarda un
+// total, no un detalle por fecha/persona.
+function computeInversion() {
+  const plat = document.getElementById('f-plataforma').value;
+  const fuentes = [];
+  if ((plat === 'todas' || plat === 'meta') && RESUMEN.meta) fuentes.push(RESUMEN.meta);
+  if ((plat === 'todas' || plat === 'tiktok') && RESUMEN.tiktok) fuentes.push(RESUMEN.tiktok);
+
+  if (fuentes.length === 0) return null;
+
+  const inversion = fuentes.reduce((s, f) => s + (f.inversion || 0), 0);
+  const leads = fuentes.reduce((s, f) => s + (f.leads || 0), 0);
+  const ventas = fuentes.reduce((s, f) => s + (f.qty_ventas || f.ventas || 0), 0);
+
+  return {
+    inversion,
+    cpl: leads ? inversion / leads : 0,
+    cpa: ventas ? inversion / ventas : 0,
+  };
+}
+
 /* ============================================================================
    RENDER
    ============================================================================ */
@@ -380,9 +405,11 @@ function render() {
   }
 
   const m = computeMetrics(filtered);
+  const inv = computeInversion();
   const maxRankBar = Math.max(...m.tipificaciones.map(t => t.count), ...m.planes.map(p => p.count), 1);
   const maxMonthVal = Math.max(...m.porMes.map(x => Math.max(x.leads, x.ventas)), 1);
   const maxVentasAsesor = Math.max(...m.ranking.map(a => a.ventas), 1);
+  const soles = n => 'S/ ' + n.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   el.innerHTML = `
     <section class="block">
@@ -394,6 +421,18 @@ function render() {
         <div class="tile"><div class="label">No contacto</div><div class="value">${m.noContacto}</div></div>
         <div class="tile"><div class="label">Ventas</div><div class="value good">${m.ventas}</div><div class="hint">${m.pctConversion.toFixed(1)}% conversión</div></div>
       </div>
+    </section>
+
+    <section class="block">
+      <h2>Inversión y costo por resultado</h2>
+      ${inv ? `
+      <div class="tiles">
+        <div class="tile"><div class="label">Inversión</div><div class="value">${soles(inv.inversion)}</div></div>
+        <div class="tile"><div class="label">CPL (costo por lead)</div><div class="value">${soles(inv.cpl)}</div></div>
+        <div class="tile"><div class="label">CPA (costo por venta)</div><div class="value">${soles(inv.cpa)}</div></div>
+      </div>
+      <div class="hint" style="margin-top:8px">Total del mes cargado en "RESUMEN META"/"RESUMEN TIKTOK" — no se filtra por mes ni asesor, solo por plataforma.</div>
+      ` : `<div class="empty-state small">Todavía no hay datos de inversión cargados en el Sheet.</div>`}
     </section>
 
     <section class="block">
