@@ -186,6 +186,18 @@
     display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap;
     font-size: 12px; color: var(--text-muted);
   }
+
+  /* Tooltip al pasar el cursor sobre barras / dona / ranking */
+  .chart-tooltip {
+    position: fixed; z-index: 1000; pointer-events: none;
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 7px 10px; font-size: 12px; color: var(--text-primary);
+    box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+    opacity: 0; transform: translateY(2px); transition: opacity .08s ease;
+    white-space: pre-line; max-width: 280px; line-height: 1.4; font-weight: 600;
+  }
+  .chart-tooltip.visible { opacity: 1; }
+  svg rect, svg circle, .rank-fill, .rank-track { cursor: default; }
 </style>
 </head>
 <body>
@@ -216,6 +228,8 @@
     <span id="footer-update">—</span>
   </footer>
 </div>
+
+<div class="chart-tooltip" id="chart-tooltip"></div>
 
 <script>
 /* ============================================================================
@@ -437,6 +451,8 @@ function computeInversion() {
 /* ============================================================================
    GRÁFICOS (SVG, se re-generan en cada render)
    ============================================================================ */
+function pctFmt(n) { return n.toFixed(1) + '%'; }
+
 function niceTicks(maxValue, targetCount) {
   if (maxValue <= 0) return { max: 1, ticks: [0, 1] };
   const rawStep = maxValue / targetCount;
@@ -477,8 +493,10 @@ function monthlyChartSvg(porMes) {
     const xVentas = cx + gap / 2;
     const hLeads = (r.leads / axisMax) * plotH;
     const hVentas = (r.ventas / axisMax) * plotH;
-    bars += `<rect x="${xLeads.toFixed(1)}" y="${(MT + plotH - hLeads).toFixed(1)}" width="${barW.toFixed(1)}" height="${hLeads.toFixed(1)}" fill="var(--series-1)" rx="2"/>`;
-    bars += `<rect x="${xVentas.toFixed(1)}" y="${(MT + plotH - hVentas).toFixed(1)}" width="${barW.toFixed(1)}" height="${hVentas.toFixed(1)}" fill="var(--series-2)" rx="2"/>`;
+    const tipLeads = escJs(`${r.label}\nLeads ingresados: ${r.leads.toLocaleString('es-PE')}`);
+    const tipVentas = escJs(`${r.label}\nVentas: ${r.ventas.toLocaleString('es-PE')}\nCVR: ${pctFmt(r.cvr)}`);
+    bars += `<rect x="${xLeads.toFixed(1)}" y="${(MT + plotH - hLeads).toFixed(1)}" width="${barW.toFixed(1)}" height="${hLeads.toFixed(1)}" fill="var(--series-1)" rx="2" onmouseenter="showTip(event,'${tipLeads}')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>`;
+    bars += `<rect x="${xVentas.toFixed(1)}" y="${(MT + plotH - hVentas).toFixed(1)}" width="${barW.toFixed(1)}" height="${hVentas.toFixed(1)}" fill="var(--series-2)" rx="2" onmouseenter="showTip(event,'${tipVentas}')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>`;
     labels += `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${escapeHtml(r.label)}</text>`;
   });
 
@@ -505,7 +523,8 @@ function planBarSvg(planes) {
   planes.forEach((p, i) => {
     const cx = ML + i * slotW + slotW / 2;
     const h = (p.ventas / axisMax) * plotH;
-    bars += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${(MT + plotH - h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="var(--series-3)" rx="3"/>`;
+    const tipPlan = escJs(`${p.name}\nVentas (clientes): ${p.ventas.toLocaleString('es-PE')} (${pctFmt(p.pct)})\nUnidades: ${p.unidades.toLocaleString('es-PE')}`);
+    bars += `<rect x="${(cx - barW / 2).toFixed(1)}" y="${(MT + plotH - h).toFixed(1)}" width="${barW.toFixed(1)}" height="${h.toFixed(1)}" fill="var(--series-3)" rx="3" onmouseenter="showTip(event,'${tipPlan}')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>`;
     labels += `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${escapeHtml(p.name)}</text>`;
   });
 
@@ -522,7 +541,8 @@ function donutSvg(segments) {
     const dasharray = `${len.toFixed(2)} ${(circumference - len).toFixed(2)}`;
     const dashoffset = (-offset).toFixed(2);
     offset += len;
-    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="${sw}" stroke-dasharray="${dasharray}" stroke-dashoffset="${dashoffset}"/>`;
+    const tipSeg = escJs(`${seg.name}\n${seg.count.toLocaleString('es-PE')} · ${pctFmt(seg.pct)}`);
+    return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${seg.color}" stroke-width="${sw}" stroke-dasharray="${dasharray}" stroke-dashoffset="${dashoffset}" onmouseenter="showTip(event,'${tipSeg}')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>`;
   }).join('');
   return `<svg viewBox="0 0 200 200" style="width:100%;max-width:220px;height:auto;display:block;margin:0 auto">
     <g transform="rotate(-90 ${cx} ${cy})">${circles}</g>
@@ -616,7 +636,7 @@ function render() {
           ${donutSvg(m.tipificaciones)}
           <div class="donut-legend">
             ${m.tipificaciones.map(t => `
-              <div class="row">
+              <div class="row" onmouseenter="showTip(event,'${escJs(`${t.name}\n${t.count.toLocaleString('es-PE')} · ${pctFmt(t.pct)}`)}')" onmousemove="moveTip(event)" onmouseleave="hideTip()">
                 <div class="name"><span class="sq" style="background:${t.color}"></span>${escapeHtml(t.name)}</div>
                 <div class="num">${t.count.toLocaleString('es-PE')} · ${pctFmt(t.pct)}</div>
               </div>`).join('')}
@@ -650,7 +670,7 @@ function render() {
       ${m.ranking.length ? `
       <div class="chart-card">
         ${m.ranking.map(a => `
-          <div class="rank-chart-row">
+          <div class="rank-chart-row" onmouseenter="showTip(event,'${escJs(`${a.asesor}\nLeads: ${a.leads.toLocaleString('es-PE')}   Gestión.: ${a.gestionados.toLocaleString('es-PE')}\nContacto: ${a.contacto.toLocaleString('es-PE')}   Ventas: ${a.ventas.toLocaleString('es-PE')}   Unidades: ${a.unidades.toLocaleString('es-PE')}\nCVR: ${pctFmt(a.cvr)}`)}')" onmousemove="moveTip(event)" onmouseleave="hideTip()">
             <div class="name" title="${escapeHtml(a.asesor)}">${escapeHtml(a.asesor)}</div>
             <div class="rank-track"><div class="rank-fill" style="width:${(a.ventas / axisMaxR * 100).toFixed(1)}%"></div></div>
           </div>`).join('')}
@@ -694,6 +714,50 @@ function render() {
 
 function escapeHtml(str) {
   return String(str).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+/* ============================================================================
+   TOOLTIP — al pasar el cursor sobre una barra / porción de la dona / fila
+   del ranking, muestra el dato exacto (igual que en el dashboard de Team 1).
+   El contenido se arma con textContent (no innerHTML), así que no hay riesgo
+   de que un nombre raro (con < > & etc.) rompa el tooltip.
+   ============================================================================ */
+function escJs(str) {
+  // Escapa el texto para poder meterlo dentro de un atributo HTML
+  // (onmouseenter="...") que a su vez arma un string de JS con comillas simples.
+  return String(str)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\n/g, '\\n')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;');
+}
+
+function showTip(evt, text) {
+  const tip = document.getElementById('chart-tooltip');
+  if (!tip) return;
+  tip.textContent = text;
+  tip.classList.add('visible');
+  moveTip(evt);
+}
+
+function moveTip(evt) {
+  const tip = document.getElementById('chart-tooltip');
+  if (!tip) return;
+  const pad = 14;
+  const vw = window.innerWidth, vh = window.innerHeight;
+  const rect = tip.getBoundingClientRect();
+  let x = evt.clientX + pad;
+  let y = evt.clientY + pad;
+  if (x + rect.width > vw - 8) x = evt.clientX - rect.width - pad;
+  if (y + rect.height > vh - 8) y = evt.clientY - rect.height - pad;
+  tip.style.left = Math.max(4, x) + 'px';
+  tip.style.top = Math.max(4, y) + 'px';
+}
+
+function hideTip() {
+  const tip = document.getElementById('chart-tooltip');
+  if (tip) tip.classList.remove('visible');
 }
 
 /* ============================================================================
