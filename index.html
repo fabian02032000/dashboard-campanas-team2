@@ -172,6 +172,8 @@
   table.data-table tbody tr:hover { background: var(--surface-2); }
   table.data-table td.rank-num { font-weight: 700; color: var(--text-muted); text-align: center; }
   table.data-table tr.first td.rank-num { color: var(--good); }
+  table.data-table td.col-ventas { font-weight: 700; color: var(--text-primary); }
+  table.data-table tfoot tr.total-row td { font-weight: 700; border-top: 2px solid var(--border); border-bottom: none; background: var(--surface-2); }
 
   .empty-state {
     text-align: center; padding: 60px 20px; color: var(--text-secondary);
@@ -366,6 +368,29 @@ function summarize(leads) {
   };
 }
 
+// Tipificación exacta que usa el equipo para marcar un lead como agendado
+// (tal cual aparece en la columna "estaus" del Sheet).
+const TIPI_AGENDADO = 'CLIENTE AGENDADO (NO TOCAR)';
+
+// Desglose más detallado por asesor — la base es summarize() (mismos números
+// que el ranking), y se le suma No Contacto / Agendados / Ventas Mono /
+// Ventas Multi / QTY Ventas Multi, para el cuadro de "Análisis por asesor".
+function analisisAsesor(leads) {
+  const s = summarize(leads);
+  const noContacto = leads.filter(l => l.status_gestion === 'NO CONTACTO').length;
+  const agendados = leads.filter(l => l.tipificacion === TIPI_AGENDADO).length;
+  const ventasMono = leads.filter(l => l.tipificacion === 'VENTA MONO').length;
+  const multiLeads = leads.filter(l => l.tipificacion === 'VENTA MULTI');
+  const ventasMulti = multiLeads.length;
+  const qtyVentasMulti = multiLeads.reduce((sum, l) => sum + l.qty_venta, 0);
+  return {
+    ...s,
+    noContacto, agendados, ventasMono, ventasMulti, qtyVentasMulti,
+    cvrUnidades: pct(s.unidades, s.gestionados),
+    hrUnidades: pct(s.unidades, s.contacto),
+  };
+}
+
 /* ============================================================================
    MÉTRICAS
    ============================================================================ */
@@ -427,7 +452,15 @@ function computeMetrics(leads) {
     })
     .sort((a, b) => b.ventas - a.ventas);
 
-  return { ...g, sinFecha, porMes, tipificaciones, planes, ranking };
+  // Análisis por asesor — mismo desglose, pero con No Contacto / Agendados /
+  // Ventas Mono / Ventas Multi / QTY Ventas Multi, y % CVR y % HR calculados
+  // sobre unidades vendidas (igual que el cuadro de referencia).
+  const analisisAsesores = Object.values(asesorMap)
+    .map(a => ({ asesor: a.asesor, ...analisisAsesor(a.leads) }))
+    .sort((a, b) => b.unidades - a.unidades);
+  const totalAnalisis = analisisAsesor(leads);
+
+  return { ...g, sinFecha, porMes, tipificaciones, planes, ranking, analisisAsesores, totalAnalisis };
 }
 
 // Inversión/CPL/CPA vienen de las pestañas "RESUMEN META"/"RESUMEN TIKTOK"
@@ -707,6 +740,55 @@ function render() {
               </tr>`).join('')}
           </tbody>
         </table>
+      </div>` : '<div class="chart-card empty-state small inline">Sin datos en el rango seleccionado</div>'}
+    </section>
+
+    <section class="block">
+      <div class="h2-row"><h2>Análisis por asesor</h2><span class="h2-note">gestión, contactabilidad y ventas por asesor · respeta los filtros de arriba</span></div>
+      ${m.analisisAsesores.length ? `
+      <div class="chart-card" style="overflow-x:auto">
+        <table class="data-table">
+          <thead><tr>
+            <th class="txt">Asesor</th>
+            <th>Gestión.</th><th>No Contacto</th><th>Agendados</th><th>Contacto</th>
+            <th>Ventas Mono</th><th>Ventas Multi</th><th>QTY V. Multi</th>
+            <th>Ventas</th><th>% CVR</th><th>% HR</th>
+          </tr></thead>
+          <tbody>
+            ${m.analisisAsesores.map(a => `
+              <tr onmouseenter="showTip(event,'${escJs(`${a.asesor}\nGestión.: ${a.gestionados.toLocaleString('es-PE')}   No Contacto: ${a.noContacto.toLocaleString('es-PE')}   Contacto: ${a.contacto.toLocaleString('es-PE')}\nAgendados: ${a.agendados.toLocaleString('es-PE')}\nVenta Mono: ${a.ventasMono.toLocaleString('es-PE')}   Venta Multi: ${a.ventasMulti.toLocaleString('es-PE')} (${a.qtyVentasMulti.toLocaleString('es-PE')} unid.)\nVentas: ${a.unidades.toLocaleString('es-PE')} unid. · CVR ${pctFmt(a.cvrUnidades)} · HR ${pctFmt(a.hrUnidades)}`)}')" onmousemove="moveTip(event)" onmouseleave="hideTip()">
+                <td class="txt">${escapeHtml(a.asesor)}</td>
+                <td>${a.gestionados.toLocaleString('es-PE')}</td>
+                <td>${a.noContacto.toLocaleString('es-PE')}</td>
+                <td>${a.agendados.toLocaleString('es-PE')}</td>
+                <td>${a.contacto.toLocaleString('es-PE')}</td>
+                <td>${a.ventasMono.toLocaleString('es-PE')}</td>
+                <td>${a.ventasMulti.toLocaleString('es-PE')}</td>
+                <td>${a.qtyVentasMulti.toLocaleString('es-PE')}</td>
+                <td class="col-ventas">${a.unidades.toLocaleString('es-PE')}</td>
+                <td>${pctFmt(a.cvrUnidades)}</td>
+                <td>${pctFmt(a.hrUnidades)}</td>
+              </tr>`).join('')}
+          </tbody>
+          <tfoot>
+            <tr class="total-row">
+              <td class="txt">Total equipo</td>
+              <td>${m.totalAnalisis.gestionados.toLocaleString('es-PE')}</td>
+              <td>${m.totalAnalisis.noContacto.toLocaleString('es-PE')}</td>
+              <td>${m.totalAnalisis.agendados.toLocaleString('es-PE')}</td>
+              <td>${m.totalAnalisis.contacto.toLocaleString('es-PE')}</td>
+              <td>${m.totalAnalisis.ventasMono.toLocaleString('es-PE')}</td>
+              <td>${m.totalAnalisis.ventasMulti.toLocaleString('es-PE')}</td>
+              <td>${m.totalAnalisis.qtyVentasMulti.toLocaleString('es-PE')}</td>
+              <td class="col-ventas">${m.totalAnalisis.unidades.toLocaleString('es-PE')}</td>
+              <td>${pctFmt(m.totalAnalisis.cvrUnidades)}</td>
+              <td>${pctFmt(m.totalAnalisis.hrUnidades)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="chart-card empty-state small inline" style="margin-top:10px; text-align:left; padding:14px 16px">
+        <strong>¿Qué significa cada columna?</strong> Gestión. = leads con algún resultado de gestión. No Contacto / Contacto = según "Status Gestión". Agendados = tipificados como "${escapeHtml(TIPI_AGENDADO)}". Ventas Mono/Multi = tipificados como "VENTA MONO"/"VENTA MULTI". QTY V. Multi = cuentas vendidas en esas ventas multi. Ventas = unidades totales vendidas (Mono + QTY V. Multi). % CVR = Ventas / Gestión. % HR = Ventas / Contacto.
       </div>` : '<div class="chart-card empty-state small inline">Sin datos en el rango seleccionado</div>'}
     </section>
   `;
