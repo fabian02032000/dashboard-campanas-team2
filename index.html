@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Team 2 — Dashboard de Leads</title>
+<title>Jean Elias — Dashboard de Leads</title>
 <style>
   /* ==========================================================================
      TOKENS — paleta (ver dataviz skill). Todo el CSS se referencia por rol,
@@ -208,7 +208,7 @@
   <header class="top">
     <div>
       <h1>📊 Dashboard de Gestión — Meta &amp; TikTok</h1>
-      <div class="sub">Leads, ventas y efectividad del equipo, en vivo desde el Google Sheet de Team 2</div>
+      <div class="sub">Leads, ventas y efectividad del equipo, en vivo desde el Google Sheet de Jean Elias</div>
       <div class="meta" id="header-meta">—</div>
     </div>
     <div class="top-actions">
@@ -226,7 +226,7 @@
   <div id="content"></div>
 
   <footer class="note">
-    <span>Fuente: Google Sheet de Team 2 (pestañas de leads Meta/TikTok + resumen de inversión) · no incluye Base Fría.</span>
+    <span>Fuente: Google Sheet de Jean Elias (pestañas de leads Meta/TikTok + resumen de inversión) · no incluye Base Fría.</span>
     <span id="footer-update">—</span>
   </footer>
 </div>
@@ -239,9 +239,9 @@
    Si algún día cambia el esquema, se ajusta solo aquí.
    ============================================================================ */
 const CONFIG = {
-  // Endpoint del Apps Script de Team 2 (propio, no compartido con otros equipos).
-  DATA_URL: 'https://script.google.com/a/macros/netcallperu.com/s/AKfycbwmOR-7cG30D6yXD_ddQFhAa9Pl9psu0svfE_oVjECz6ozYoYJoCcXOQBAXXyHnHHyYaw/exec',
-  DATA_TOKEN: '8a4d154f719c4e2495ee726ea173c6c840ac7e69eae945d389884a00a1619f51',
+  // Endpoint del Apps Script de Team Jean Elias (propio, no compartido con otros equipos).
+  DATA_URL: 'https://script.google.com/macros/s/AKfycbxA3OtKTuSI7CHMSjxDBRoZrXYxV72B-DNcQ9hrkkWEfZyNqy2gT3T0EojwFrBJa8ea/exec',
+  DATA_TOKEN: '7ebab45d2d214caf83e8f1cffb00471a9750e642c9054ce9b9f157a366bd5485',
   MESES: ['', 'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'],
 };
 
@@ -592,7 +592,7 @@ function render() {
   if (RAW_LEADS.length === 0) {
     el.innerHTML = `<div class="empty-state">
       <div class="big">Todavía no hay datos conectados</div>
-      <div class="small">En cuanto el Google Sheet de Team 2 esté enlazado, este panel se llena solo.</div>
+      <div class="small">En cuanto el Google Sheet de Jean Elias esté enlazado, este panel se llena solo.</div>
     </div>`;
     return;
   }
