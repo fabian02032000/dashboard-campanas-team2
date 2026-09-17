@@ -248,6 +248,7 @@ const CONFIG = {
 let RAW_LEADS = [];   // tal cual llega del backend
 let META = { generated_at: null };
 let RESUMEN = { meta: null, tiktok: null }; // totales de inversión/CPL/CPA (no se filtran por mes/asesor)
+let RESUMEN_MENSUAL = { meta: [], tiktok: [] }; // inversión/leads por mes, uno x plataforma (viene de los bloques "Leads {Plataforma} {Mes}" en RESUMEN META/TIKTOK)
 
 /* ============================================================================
    CARGA / NORMALIZACIÓN
@@ -270,6 +271,7 @@ async function loadData() {
   RAW_LEADS = Array.isArray(json.leads) ? json.leads : [];
   META.generated_at = json.generated_at || null;
   RESUMEN = json.resumen || { meta: null, tiktok: null };
+  RESUMEN_MENSUAL = json.resumen_mensual || { meta: [], tiktok: [] };
 
   const fecha = META.generated_at
     ? new Date(META.generated_at).toLocaleString('es-PE', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -463,11 +465,9 @@ function computeMetrics(leads) {
   return { ...g, sinFecha, porMes, tipificaciones, planes, ranking, analisisAsesores, totalAnalisis };
 }
 
-// Inversión/CPL/CPA vienen de las pestañas "RESUMEN META"/"RESUMEN TIKTOK"
-// (total cargado ahí). Respeta el filtro de Plataforma; todavía no se puede
-// filtrar por mes o asesor porque el Sheet guarda un total por plataforma,
-// no un historial mes a mes — para eso habría que empezar a registrar la
-// inversión de cada mes en una columna nueva del resumen.
+// Inversión/CPL/CPA (totales) vienen del bloque general de las pestañas
+// "RESUMEN META"/"RESUMEN TIKTOK". Respeta el filtro de Plataforma. El
+// desglose mes a mes vive en RESUMEN_MENSUAL (ver computeInversionMensual).
 function computeInversion() {
   const plat = document.getElementById('f-plataforma').value;
   const fuentes = [];
@@ -479,6 +479,32 @@ function computeInversion() {
   const leads = fuentes.reduce((s, f) => s + (f.leads || 0), 0);
   const unidades = fuentes.reduce((s, f) => s + (f.qty_ventas || f.ventas || 0), 0);
   return { inversion, cpl: leads ? inversion / leads : 0, cpa: unidades ? inversion / unidades : 0 };
+}
+
+// Inversión mensual por plataforma — viene de los bloques "Leads {Plataforma}
+// {Mes}" que ya existen en las pestañas RESUMEN META / RESUMEN TIKTOK del
+// Sheet. Respeta el filtro de Plataforma; no se filtra por mes ni asesor
+// porque acá el objetivo es ver la serie completa mes a mes.
+function computeInversionMensual() {
+  const plat = document.getElementById('f-plataforma').value;
+  const mapa = {};
+  const acumular = (arr, key) => {
+    (arr || []).forEach(item => {
+      const nombre = item.mes_nombre;
+      if (!nombre) return;
+      if (!mapa[nombre]) mapa[nombre] = { mes_nombre: nombre, meta: 0, tiktok: 0 };
+      mapa[nombre][key] += Number(item.inversion) || 0;
+    });
+  };
+  if (plat === 'todas' || plat === 'meta') acumular(RESUMEN_MENSUAL.meta, 'meta');
+  if (plat === 'todas' || plat === 'tiktok') acumular(RESUMEN_MENSUAL.tiktok, 'tiktok');
+
+  const ordenMes = {};
+  CONFIG.MESES.forEach((nombre, i) => { if (nombre) ordenMes[nombre] = i; });
+
+  return Object.values(mapa)
+    .map(r => ({ ...r, total: r.meta + r.tiktok }))
+    .sort((a, b) => (ordenMes[a.mes_nombre] || 0) - (ordenMes[b.mes_nombre] || 0));
 }
 
 /* ============================================================================
@@ -531,6 +557,41 @@ function monthlyChartSvg(porMes) {
     bars += `<rect x="${xLeads.toFixed(1)}" y="${(MT + plotH - hLeads).toFixed(1)}" width="${barW.toFixed(1)}" height="${hLeads.toFixed(1)}" fill="var(--series-1)" rx="2" onmouseenter="showTip(event,'${tipLeads}')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>`;
     bars += `<rect x="${xVentas.toFixed(1)}" y="${(MT + plotH - hVentas).toFixed(1)}" width="${barW.toFixed(1)}" height="${hVentas.toFixed(1)}" fill="var(--series-2)" rx="2" onmouseenter="showTip(event,'${tipVentas}')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>`;
     labels += `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${escapeHtml(r.label)}</text>`;
+  });
+
+  return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${bars}${labels}</svg>`;
+}
+
+function inversionMensualChartSvg(data) {
+  const W = 900, H = 260, ML = 70, MR = 10, MT = 10, MB = 34;
+  const plotW = W - ML - MR, plotH = H - MT - MB;
+  const maxVal = Math.max(1, ...data.map(r => Math.max(r.meta, r.tiktok)));
+  const { max: axisMax, ticks } = niceTicks(maxVal, 6);
+  const n = Math.max(data.length, 1);
+  const groupW = plotW / n;
+  const barW = Math.min(24, groupW * 0.3);
+  const gap = 6;
+
+  let grid = '';
+  ticks.forEach(t => {
+    const gy = MT + plotH - (t / axisMax) * plotH;
+    grid += `<line x1="${ML}" x2="${W - MR}" y1="${gy.toFixed(1)}" y2="${gy.toFixed(1)}" stroke="var(--gridline)" stroke-width="1"/>`;
+    grid += `<text x="${ML - 8}" y="${(gy + 3).toFixed(1)}" text-anchor="end" font-size="11" fill="var(--text-muted)">S/ ${t.toLocaleString('es-PE')}</text>`;
+  });
+
+  let bars = '', labels = '';
+  data.forEach((r, i) => {
+    const cx = ML + i * groupW + groupW / 2;
+    const xMeta = cx - gap / 2 - barW;
+    const xTiktok = cx + gap / 2;
+    const hMeta = (r.meta / axisMax) * plotH;
+    const hTiktok = (r.tiktok / axisMax) * plotH;
+    const fmtSol = v => v.toLocaleString('es-PE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+    const tipMeta = escJs(`${r.mes_nombre}\nMeta: S/ ${fmtSol(r.meta)}`);
+    const tipTiktok = escJs(`${r.mes_nombre}\nTikTok: S/ ${fmtSol(r.tiktok)}`);
+    bars += `<rect x="${xMeta.toFixed(1)}" y="${(MT + plotH - hMeta).toFixed(1)}" width="${barW.toFixed(1)}" height="${hMeta.toFixed(1)}" fill="var(--series-1)" rx="2" onmouseenter="showTip(event,'${tipMeta}')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>`;
+    bars += `<rect x="${xTiktok.toFixed(1)}" y="${(MT + plotH - hTiktok).toFixed(1)}" width="${barW.toFixed(1)}" height="${hTiktok.toFixed(1)}" fill="var(--series-4)" rx="2" onmouseenter="showTip(event,'${tipTiktok}')" onmousemove="moveTip(event)" onmouseleave="hideTip()"/>`;
+    labels += `<text x="${cx.toFixed(1)}" y="${H - 10}" text-anchor="middle" font-size="11" fill="var(--text-muted)">${escapeHtml(r.mes_nombre)}</text>`;
   });
 
   return `<svg viewBox="0 0 ${W} ${H}" style="width:100%;height:auto;display:block">${grid}${bars}${labels}</svg>`;
@@ -599,6 +660,7 @@ function render() {
 
   const m = computeMetrics(filtered);
   const inv = computeInversion();
+  const invMensual = computeInversionMensual();
   const soles = n => 'S/ ' + n.toLocaleString('es-PE', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
   const pctFmt = n => n.toFixed(1) + '%';
 
@@ -655,6 +717,32 @@ function render() {
                 <td>${pctFmt(r.pctContacto)}</td>
                 <td>${pctFmt(r.cvr)}</td>
                 <td>${pctFmt(r.vendidoContacto)}</td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>` : ''}
+    </section>
+
+    <section class="block">
+      <div class="h2-row"><h2>Inversión mensual por plataforma</h2><span class="h2-note">gasto en Meta Ads y TikTok Ads, por mes</span></div>
+      <div class="chart-card">
+        <div class="legend">
+          <span><span class="dot" style="background:var(--series-1)"></span>Meta</span>
+          <span><span class="dot" style="background:var(--series-4)"></span>TikTok</span>
+        </div>
+        ${invMensual.length ? inversionMensualChartSvg(invMensual) : '<div class="empty-state small inline">Todavía no hay inversión mensual cargada en "RESUMEN META"/"RESUMEN TIKTOK".</div>'}
+      </div>
+      ${invMensual.length ? `
+      <div class="chart-card" style="margin-top:12px; overflow-x:auto">
+        <table class="data-table">
+          <thead><tr><th class="txt">Mes</th><th>Meta</th><th>TikTok</th><th>Total</th></tr></thead>
+          <tbody>
+            ${invMensual.map(r => `
+              <tr>
+                <td class="txt">${escapeHtml(r.mes_nombre)}</td>
+                <td>${soles(r.meta)}</td>
+                <td>${soles(r.tiktok)}</td>
+                <td>${soles(r.total)}</td>
               </tr>`).join('')}
           </tbody>
         </table>
