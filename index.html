@@ -28,6 +28,8 @@
     --baseline: #cfcad9;
     --border: rgba(11, 11, 11, 0.12);
     --good: #3f6b00;
+    --warn: #a35f00;
+    --bad: #c0262d;
     --accent: #7b00d3;
     --label: #7b00d3;
     --series-1: #7b00d3;
@@ -52,6 +54,8 @@
     --baseline: #3b3b44;
     --border: rgba(255, 255, 255, 0.1);
     --good: #c6ff00;
+    --warn: #ffb020;
+    --bad: #ff5a5a;
     --accent: #c6ff00;
     --label: #b26bff;
     --series-1: #b26bff;
@@ -64,6 +68,23 @@
     --seq-100: #dcc2ff;
     --seq-400: #b26bff;
   }
+
+
+  /* Clientes agendados: tope por asesor */
+  .badge { display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; letter-spacing: 0.02em; border: 1px solid currentColor; white-space: nowrap; }
+  .badge.ok { color: var(--good); }
+  .badge.warn { color: var(--warn); }
+  .badge.bad { color: var(--bad); }
+  .agenda-bar { position: relative; height: 8px; min-width: 90px; background: var(--gridline); border-radius: 4px; overflow: hidden; }
+  .agenda-bar > span { display: block; height: 100%; border-radius: 4px; }
+  .agenda-bar.ok > span { background: var(--good); }
+  .agenda-bar.warn > span { background: var(--warn); }
+  .agenda-bar.bad > span { background: var(--bad); }
+  .agenda-alert { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; margin-bottom: 12px; border: 1px solid var(--bad); border-radius: 8px; color: var(--text-primary); font-size: 13px; }
+  .agenda-alert strong { color: var(--bad); }
+  .agenda-alert.warn { border-color: var(--warn); }
+  .agenda-alert.warn strong { color: var(--warn); }
+  table.data-table tr.agenda-over td.txt { color: var(--bad); font-weight: 700; }
 
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; }
@@ -864,6 +885,94 @@ function setTab(name) {
   document.querySelectorAll('.tab-panel').forEach(p => p.classList.toggle('active', p.dataset.panel === name));
 }
 
+
+// ----- Clientes agendados: tope de 10 por asesor -----
+const AGENDADOS_MAX = 10;
+function computeAgendados() {
+  const todos = RAW_LEADS.map(normalize).filter(l => l.tipificacion === TIPI_AGENDADO);
+  const claveMes = l => (l.anio && l.mes) ? (l.anio + '-' + String(l.mes).padStart(2, '0')) : 'sin-fecha';
+  const meses = [...new Set(todos.map(claveMes))].sort();
+  const porAsesor = {};
+  const porMes = {};
+  todos.forEach(l => {
+    const k = claveMes(l);
+    const a = porAsesor[l.asesor] || (porAsesor[l.asesor] = { asesor: l.asesor, total: 0, porMes: {} });
+    a.total += 1;
+    a.porMes[k] = (a.porMes[k] || 0) + 1;
+    porMes[k] = (porMes[k] || 0) + 1;
+  });
+  const asesores = Object.values(porAsesor).sort((x, y) => y.total - x.total || x.asesor.localeCompare(y.asesor));
+  asesores.forEach(a => {
+    a.exceso = Math.max(0, a.total - AGENDADOS_MAX);
+    a.estado = a.total > AGENDADOS_MAX ? 'bad' : (a.total === AGENDADOS_MAX ? 'warn' : 'ok');
+  });
+  const mesTop = meses.slice().sort((x, y) => (porMes[y] || 0) - (porMes[x] || 0))[0] || null;
+  return { total: todos.length, meses, asesores, porMes, mesTop };
+}
+function etiquetaMesAgenda(k) {
+  if (k === 'sin-fecha') return 'Sin fecha';
+  const [y, m] = k.split('-');
+  return CONFIG.MESES[Number(m)] + ' ' + y;
+}
+function agendadosSectionHtml() {
+  const ag = computeAgendados();
+  const n = x => x.toLocaleString('es-PE');
+  if (ag.total === 0) {
+    return `<section class="block">
+      <div class="h2-row"><h2>Clientes agendados</h2><span class="h2-note">máximo ${AGENDADOS_MAX} por asesor</span></div>
+      <div class="chart-card"><div class="empty-state small inline">No hay clientes agendados por ahora</div></div>
+    </section>`;
+  }
+  const excedidos = ag.asesores.filter(a => a.estado === 'bad');
+  const enLimite = ag.asesores.filter(a => a.estado === 'warn');
+  const top = ag.asesores[0];
+  let alerta = '';
+  if (excedidos.length) {
+    alerta = `<div class="agenda-alert"><span aria-hidden="true">⚠</span><div><strong>En falta:</strong> ${excedidos.length === 1 ? '1 asesor pasa' : excedidos.length + ' asesores pasan'} el máximo de ${AGENDADOS_MAX} agendados — ${excedidos.map(a => escapeHtml(a.asesor) + ' (' + n(a.total) + ', +' + n(a.exceso) + ')').join(' · ')}.</div></div>`;
+  } else if (enLimite.length) {
+    alerta = `<div class="agenda-alert warn"><span aria-hidden="true">⚠</span><div><strong>Advertencia:</strong> ${enLimite.map(a => escapeHtml(a.asesor)).join(' · ')} llegó al máximo de ${AGENDADOS_MAX} agendados.</div></div>`;
+  }
+  const estadoBadge = a => a.estado === 'bad'
+    ? `<span class="badge bad">En falta · +${n(a.exceso)} sobre el máximo</span>`
+    : (a.estado === 'warn' ? '<span class="badge warn">Advertencia · en el máximo</span>' : `<span class="badge ok">Dentro del máximo · quedan ${n(AGENDADOS_MAX - a.total)}</span>`);
+  return `<section class="block">
+    <div class="h2-row"><h2>Clientes agendados</h2><span class="h2-note">estado actual · máximo ${AGENDADOS_MAX} por asesor · no cambia con los filtros de arriba</span></div>
+    ${alerta}
+    <div class="tiles">
+      <div class="tile"><div class="label">Total agendados</div><div class="value">${n(ag.total)}</div><div class="hint">tipificados "${escapeHtml(TIPI_AGENDADO)}"</div></div>
+      <div class="tile"><div class="label">Asesor con más</div><div class="value">${n(top.total)}</div><div class="hint">${escapeHtml(top.asesor)}</div></div>
+      <div class="tile"><div class="label">Mes con más</div><div class="value">${ag.mesTop ? n(ag.porMes[ag.mesTop]) : '—'}</div><div class="hint">${ag.mesTop ? escapeHtml(etiquetaMesAgenda(ag.mesTop)) : ''}</div></div>
+      <div class="tile"><div class="label">Asesores en alerta</div><div class="value" style="color:${excedidos.length ? 'var(--bad)' : (enLimite.length ? 'var(--warn)' : 'inherit')}">${n(excedidos.length + enLimite.length)}</div><div class="hint">${n(excedidos.length)} en falta · ${n(enLimite.length)} en el máximo</div></div>
+    </div>
+    <div class="chart-card" style="margin-top:12px; overflow-x:auto">
+      <table class="data-table">
+        <thead><tr>
+          <th class="txt">Asesor</th>
+          ${ag.meses.map(k => `<th>${escapeHtml(etiquetaMesAgenda(k))}</th>`).join('')}
+          <th>Total</th><th>Uso del máximo</th><th class="txt">Estado</th>
+        </tr></thead>
+        <tbody>
+          ${ag.asesores.map(a => `
+            <tr class="${a.estado === 'bad' ? 'agenda-over' : ''}">
+              <td class="txt">${escapeHtml(a.asesor)}</td>
+              ${ag.meses.map(k => `<td>${a.porMes[k] ? n(a.porMes[k]) : '–'}</td>`).join('')}
+              <td class="col-ventas">${n(a.total)} / ${AGENDADOS_MAX}</td>
+              <td><div class="agenda-bar ${a.estado}" title="${n(a.total)} de ${AGENDADOS_MAX}"><span style="width:${Math.min(100, a.total / AGENDADOS_MAX * 100).toFixed(0)}%"></span></div></td>
+              <td class="txt">${estadoBadge(a)}</td>
+            </tr>`).join('')}
+        </tbody>
+        <tfoot>
+          <tr class="total-row">
+            <td class="txt">Total equipo</td>
+            ${ag.meses.map(k => `<td>${n(ag.porMes[k] || 0)}</td>`).join('')}
+            <td class="col-ventas">${n(ag.total)}</td><td></td><td></td>
+          </tr>
+        </tfoot>
+      </table>
+    </div>
+  </section>`;
+}
+
 function render() {
   const filtered = applyFilters(RAW_LEADS.map(normalize));
   const el = document.getElementById('content');
@@ -911,6 +1020,8 @@ function render() {
       </div>
       ${inv ? '' : '<div class="hint" style="margin-top:8px">No hay inversión cargada en "RESUMEN META"/"RESUMEN TIKTOK" para el mes/plataforma elegidos.</div>'}
     </section>
+
+    ${agendadosSectionHtml()}
 
     <section class="block">
       <div class="h2-row"><h2>Resumen mensual</h2><span class="h2-note">leads ingresados vs. vendidos, por mes${sinFechaNote}</span></div>
