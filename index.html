@@ -330,6 +330,7 @@ const CONFIG = {
 let RAW_LEADS = [];   // tal cual llega del backend
 let META = { generated_at: null };
 let RESUMEN = { meta: null, tiktok: null }; // totales de inversión/CPL/CPA (no se filtran por mes/asesor)
+let INVERSION_AUTO = []; // gasto real de Meta por mes (+10%), leído de la API de Meta cada 5 min
 let RESUMEN_MENSUAL = { meta: [], tiktok: [] }; // inversión/leads por mes, uno x plataforma (viene de los bloques "Leads {Plataforma} {Mes}" en RESUMEN META/TIKTOK)
 
 /* ============================================================================
@@ -354,6 +355,7 @@ async function loadData() {
   META.generated_at = json.generated_at || null;
   RESUMEN = json.resumen || { meta: null, tiktok: null };
   RESUMEN_MENSUAL = json.resumen_mensual || { meta: [], tiktok: [] };
+  INVERSION_AUTO = Array.isArray(json.inversion_auto) ? json.inversion_auto : [];
 
   const fecha = META.generated_at
     ? new Date(META.generated_at).toLocaleString('es-PE', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })
@@ -594,12 +596,22 @@ function computeInversion() {
     nombreMesFiltro = CONFIG.MESES[Number(m)];
   }
 
+  // Mes en curso (hora de Lima): su inversión sale directo de Meta (+10%), actualizada cada 5 min.
+  // Los meses cerrados siguen usando lo que está en RESUMEN META.
+  const hoyLima = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Lima', year: 'numeric', month: '2-digit' }).format(new Date()).slice(0, 7);
+  const autoMesActual = INVERSION_AUTO.find(a => a.mes === hoyLima);
+  const nombreMesActual = autoMesActual ? CONFIG.MESES[Number(hoyLima.split('-')[1])] : null;
+
   const fuentes = [];
-  const agregar = arr => (arr || []).forEach(item => {
+  const agregar = (arr, esMeta) => (arr || []).forEach(item => {
     if (nombreMesFiltro && item.mes_nombre !== nombreMesFiltro) return;
+    if (esMeta && autoMesActual && item.mes_nombre === nombreMesActual) {
+      fuentes.push({ ...item, inversion: autoMesActual.inversion });
+      return;
+    }
     fuentes.push(item);
   });
-  if (plat === 'todas' || plat === 'meta') agregar(RESUMEN_MENSUAL.meta);
+  if (plat === 'todas' || plat === 'meta') agregar(RESUMEN_MENSUAL.meta, true);
   if (plat === 'todas' || plat === 'tiktok') agregar(RESUMEN_MENSUAL.tiktok);
   if (fuentes.length === 0) return null;
 
@@ -1156,6 +1168,15 @@ async function refreshAndRender() {
 }
 
 document.getElementById('btn-refresh').addEventListener('click', refreshAndRender);
+
+// Se actualiza solo cada 5 minutos (sin borrar la pantalla si falla una vez)
+setInterval(async () => {
+  try {
+    await loadData();
+    populateFilters(RAW_LEADS.map(normalize));
+    render();
+  } catch (err) { /* se mantiene lo que ya se ve; reintenta en 5 min */ }
+}, 5 * 60 * 1000);
 
 document.getElementById('btn-theme').addEventListener('click', () => {
   const root = document.documentElement;
